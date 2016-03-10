@@ -1,5 +1,6 @@
 # cloudwriter
 
+[![Build Status](https://snap-ci.com/savaki/cloudwriter/branch/master/build_image)](https://snap-ci.com/savaki/cloudwriter/branch/master)
 [![GoDoc](https://godoc.org/github.com/savaki/cloudwriter?status.svg)](https://godoc.org/github.com/savaki/cloudwriter)
 
 cloudwriter is a implementation of io.Reader that ships data to AWS CloudWatch

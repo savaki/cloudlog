@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	w, err := cloudwriter.New(nil, "sample-group", "sample-stream")
+	w, err := cloudwriter.New(nil, "sample-group", "sample-stream-{{.Timestamp}}")
 	if err != nil {
 		log.Fatalln(err)
 	}

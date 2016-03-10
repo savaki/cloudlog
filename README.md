@@ -1,5 +1,7 @@
 # cloudwriter
 
+[![GoDoc](https://godoc.org/github.com/savaki/cloudwriter?status.svg)](https://godoc.org/github.com/savaki/cloudwriter)
+
 cloudwriter is a implementation of io.Reader that ships data to AWS CloudWatch
  
 ## Example 
@@ -19,7 +21,7 @@ import (
 )
 
 func main() {
-	w, err := cloudwriter.New(nil, "sample-group", "sample-stream")
+	w, err := cloudwriter.New(nil, "sample-group", "sample-stream-{{.Timestamp}}")
 	if err != nil {
 		log.Fatalln(err)
 	}

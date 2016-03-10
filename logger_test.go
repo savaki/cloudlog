@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"regexp"
+
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 )
 
@@ -174,5 +176,18 @@ func TestStripLastChar(t *testing.T) {
 
 	if region[0:len(region)-1] != "us-east-1" {
 		t.Error("expected to strip off the last rune")
+	}
+}
+
+func TestRenderStreamName(t *testing.T) {
+	streamName, err := renderStreamName("test-{{.Timestamp}}")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	pattern := regexp.MustCompile(`test-\d+`)
+	if !pattern.MatchString(streamName) {
+		t.Error("expected stream name to have been interpolated")
 	}
 }

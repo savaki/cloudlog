@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"html/template"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -33,6 +35,8 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 )
 
+// CloudWatchLogs is an interface that provides the minimal shape of *cloudwatchlogs.CloudWatchLogs
+// and simplifies testing
 type CloudWatchLogs interface {
 	PutLogEvents(in *cloudwatchlogs.PutLogEventsInput) (*cloudwatchlogs.PutLogEventsOutput, error)
 	CreateLogGroup(*cloudwatchlogs.CreateLogGroupInput) (*cloudwatchlogs.CreateLogGroupOutput, error)
@@ -58,11 +62,16 @@ var (
 )
 
 const (
-	MaxBatchSize  = 1000
-	Timeout       = time.Second * 15
+	// Maximum number of records to be saved before calling PutLogEvents
+	MaxBatchSize = 1000
+
+	// Length of time to wait with no new records before shipping what records we have
+	Timeout = time.Second * 15
+
 	nanosPerMilli = 1000000
 )
 
+// Write implements the io.Writer interface
 func (l *logger) Write(p []byte) (n int, err error) {
 	n = len(p)
 
@@ -100,6 +109,7 @@ func (l *logger) Write(p []byte) (n int, err error) {
 	return
 }
 
+// Close the writer and any related goroutines it may be running
 func (l *logger) Close() error {
 	l.cancel()
 	l.wg.Wait()
@@ -163,6 +173,23 @@ func (l *logger) start() {
 
 		timer.Stop()
 	}
+}
+
+func renderStreamName(streamName string) (string, error) {
+	t, err := template.New("stream-name").Parse(streamName)
+	if err != nil {
+		return "", err
+	}
+
+	buf := &bytes.Buffer{}
+	err = t.Execute(buf, map[string]interface{}{
+		"Timestamp": time.Now().Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return string(buf.Bytes()), nil
 }
 
 func (l *logger) createLogGroup() error {
@@ -233,6 +260,14 @@ func region() string {
 	return region
 }
 
+// New instantiates a new io.WriteCloser instance that asynchronously writes records
+// to CloudWatchLogs.  cloudwriter assumes that records will be divided using a newline
+// character.
+//
+// client is an optional instance of *cloudwatchlogs.CloudWatchLogs
+//
+// streamName supports go template style interpolation with {{ .Timestamp }}
+//
 func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, error) {
 	if client == nil {
 		cfg := &aws.Config{Region: aws.String(region())}
@@ -240,12 +275,17 @@ func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, e
 		client = cloudwatchlogs.New(session.New(cfg))
 	}
 
+	interpolatedStreamName, err := renderStreamName(streamName)
+	if err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	l := &logger{
 		client:     client,
 		batchSize:  MaxBatchSize,
 		groupName:  aws.String(groupName),
-		streamName: aws.String(streamName),
+		streamName: aws.String(interpolatedStreamName),
 		cancel:     cancel,
 		ctx:        ctx,
 		wg:         &sync.WaitGroup{},
@@ -266,6 +306,8 @@ func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, e
 	return l, nil
 }
 
+// The default batch size is MaxBatchSize.  While this should be suitable for most
+// cases, you have the option of changing this.
 func WithBatchSize(w io.WriteCloser, batchSize int) io.WriteCloser {
 	switch v := w.(type) {
 	case *logger:
@@ -276,6 +318,7 @@ func WithBatchSize(w io.WriteCloser, batchSize int) io.WriteCloser {
 	}
 }
 
+// For testing, enables debug messages to be printed.
 func WithDebug(w io.WriteCloser, debug func(...interface{})) io.WriteCloser {
 	switch v := w.(type) {
 	case *logger:

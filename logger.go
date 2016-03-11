@@ -109,7 +109,7 @@ func (l *logger) Write(p []byte) (n int, err error) {
 	return
 }
 
-// Close the writer and any related goroutines it may be running
+// Close the writer and any related go routines it may be running
 func (l *logger) Close() error {
 	l.cancel()
 	l.wg.Wait()

@@ -8,7 +8,7 @@ cloudwriter is a implementation of io.Writer that ships data to AWS CloudWatch
 ## Example 
 
 Assuming that you've set AWS credentials via the environment, the following example
-writes a simple 
+writes logs messages to the sample-group cloudwatch log group.
  
 ```
 package main

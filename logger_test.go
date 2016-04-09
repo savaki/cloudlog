@@ -17,10 +17,9 @@ package cloudwriter
 import (
 	"io"
 	"log"
+	"regexp"
 	"testing"
 	"time"
-
-	"regexp"
 
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 )
@@ -30,7 +29,7 @@ var (
 	testStreamName = "blah-stream"
 )
 
-func Debug(args ...interface{}) {
+func Log(args ...interface{}) {
 	log.Println(args...)
 }
 
@@ -70,14 +69,14 @@ func (n NoOp) CreateLogStream(*cloudwatchlogs.CreateLogStreamInput) (*cloudwatch
 
 func TestLogSimpleEvent(t *testing.T) {
 	mock := &Mock{}
-	w, err := New(mock, testGroupName, testStreamName)
+	w, err := New(mock, testGroupName, testStreamName,
+		BatchSize(1),
+		Debug(Log),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-
-	w = WithBatchSize(w, 1)
-	w = WithDebug(w, Debug)
 	defer w.Close()
 
 	io.WriteString(w, "hello world\n")
@@ -93,14 +92,14 @@ func TestLogSimpleEvent(t *testing.T) {
 
 func TestLogMultiline(t *testing.T) {
 	mock := &Mock{}
-	w, err := New(mock, testGroupName, testStreamName)
+	w, err := New(mock, testGroupName, testStreamName,
+		BatchSize(2),
+		Debug(Log),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-
-	w = WithBatchSize(w, 2)
-	w = WithDebug(w, Debug)
 	defer w.Close()
 
 	io.WriteString(w, "hello\nworld\n")
@@ -116,14 +115,14 @@ func TestLogMultiline(t *testing.T) {
 
 func TestLogPartial(t *testing.T) {
 	mock := &Mock{}
-	w, err := New(mock, testGroupName, testStreamName)
+	w, err := New(mock, testGroupName, testStreamName,
+		BatchSize(1),
+		Debug(Log),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-
-	w = WithBatchSize(w, 1)
-	w = WithDebug(w, Debug)
 	defer w.Close()
 
 	io.WriteString(w, "hello ")

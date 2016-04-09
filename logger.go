@@ -16,6 +16,8 @@ package cloudwriter
 
 import (
 	"bytes"
+	"fmt"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
@@ -25,14 +27,23 @@ import (
 	"sync"
 	"time"
 
-	"html/template"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
+)
+
+const (
+	// Maximum number of records to be saved before calling PutLogEvents
+	MaxBatchSize = 1000
+
+	// Default number of records to be saved before calling PutLogEvents
+	DefaultBatchSize = 1000
+
+	// Length of time to wait with no new records before shipping what records we have
+	DefaultTimeout = time.Second * 15
 )
 
 // CloudWatchLogs is an interface that provides the minimal shape of *cloudwatchlogs.CloudWatchLogs
@@ -55,6 +66,7 @@ type logger struct {
 	buffer        string
 	sequenceToken *string
 	debug         func(...interface{})
+	interval      time.Duration
 }
 
 var (
@@ -62,13 +74,7 @@ var (
 )
 
 const (
-	// Maximum number of records to be saved before calling PutLogEvents
-	MaxBatchSize = 1000
-
-	// Length of time to wait with no new records before shipping what records we have
-	Timeout = time.Second * 15
-
-	nanosPerMilli = 1000000
+	ResourceAlreadyExistsException = "ResourceAlreadyExistsException"
 )
 
 // Write implements the io.Writer interface
@@ -94,7 +100,7 @@ func (l *logger) Write(p []byte) (n int, err error) {
 			l.buffer = ""
 		}
 		event := &cloudwatchlogs.InputLogEvent{
-			Timestamp: aws.Int64(time.Now().UnixNano() / nanosPerMilli),
+			Timestamp: aws.Int64(time.Now().UnixNano() / int64(time.Millisecond)),
 			Message:   aws.String(message),
 		}
 
@@ -130,7 +136,6 @@ func (l *logger) start() {
 
 	events := make([]*cloudwatchlogs.InputLogEvent, MaxBatchSize)
 	offset := 0
-	interval := time.Second * 15
 
 	publishEventsFunc := func() {
 		if offset == 0 {
@@ -145,10 +150,10 @@ func (l *logger) start() {
 		l.debug("Successfully published", offset, "events")
 	}
 
-	timer := time.NewTimer(interval)
+	timer := time.NewTimer(l.interval)
 
 	for {
-		timer.Reset(interval)
+		timer.Reset(l.interval)
 
 		select {
 		case <-l.ctx.Done():
@@ -268,7 +273,7 @@ func region() string {
 //
 // streamName supports go template style interpolation with {{ .Timestamp }}
 //
-func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, error) {
+func New(client CloudWatchLogs, groupName, streamName string, configs ...func(*logger)) (io.WriteCloser, error) {
 	if client == nil {
 		cfg := &aws.Config{Region: aws.String(region())}
 
@@ -283,7 +288,6 @@ func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, e
 	ctx, cancel := context.WithCancel(context.Background())
 	l := &logger{
 		client:     client,
-		batchSize:  MaxBatchSize,
 		groupName:  aws.String(groupName),
 		streamName: aws.String(interpolatedStreamName),
 		cancel:     cancel,
@@ -291,12 +295,18 @@ func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, e
 		wg:         &sync.WaitGroup{},
 		ch:         make(chan *cloudwatchlogs.InputLogEvent, 4096),
 		debug:      func(...interface{}) {},
+		batchSize:  DefaultBatchSize,
+		interval:   DefaultTimeout,
 	}
 
-	if err := l.createLogGroup(); err != nil && errCode(err) != "ResourceAlreadyExistsException" {
+	for _, config := range configs {
+		config(l)
+	}
+
+	if err := l.createLogGroup(); err != nil && errCode(err) != ResourceAlreadyExistsException {
 		return nil, err
 	}
-	if err := l.createLogStream(); err != nil && errCode(err) != "ResourceAlreadyExistsException" {
+	if err := l.createLogStream(); err != nil && errCode(err) != ResourceAlreadyExistsException {
 		return nil, err
 	}
 
@@ -309,6 +319,7 @@ func New(client CloudWatchLogs, groupName, streamName string) (io.WriteCloser, e
 // The default batch size is MaxBatchSize.  While this should be suitable for most
 // cases, you have the option of changing this.
 func WithBatchSize(w io.WriteCloser, batchSize int) io.WriteCloser {
+	fmt.Fprintln(os.Stderr, "cloudwriter.WithBatchSize is deprecated, please use cloudwriter.BatchSize")
 	switch v := w.(type) {
 	case *logger:
 		v.batchSize = batchSize
@@ -320,11 +331,32 @@ func WithBatchSize(w io.WriteCloser, batchSize int) io.WriteCloser {
 
 // For testing, enables debug messages to be printed.
 func WithDebug(w io.WriteCloser, debug func(...interface{})) io.WriteCloser {
+	fmt.Fprintln(os.Stderr, "cloudwriter.WithDebug is deprecated, please use cloudwriter.Debug")
 	switch v := w.(type) {
 	case *logger:
 		v.debug = debug
 		return v
 	default:
 		return w
+	}
+}
+
+func Debug(debug func(...interface{})) func(*logger) {
+	return func(l *logger) {
+		l.debug = debug
+	}
+}
+
+// The default batch size is MaxBatchSize.  While this should be suitable for most
+// cases, you have the option of changing this.
+func BatchSize(batchSize int) func(*logger) {
+	return func(l *logger) {
+		l.batchSize = batchSize
+	}
+}
+
+func Interval(t time.Duration) func(*logger) {
+	return func(l *logger) {
+		l.interval = t
 	}
 }

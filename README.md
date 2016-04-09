@@ -22,12 +22,12 @@ import (
 )
 
 func main() {
-	w, err := cloudwriter.New(nil, "sample-group", "sample-stream-{{.Timestamp}}")
+	w, err := cloudwriter.New(nil, "sample-group", "sample-stream-{{.Timestamp}}",
+	  cloudwriter.BatchSize(1)
+	)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	w = cloudwriter.WithBatchSize(w, 1)
 	defer w.Close()
 
 	io.WriteString(w, "hello world\n")

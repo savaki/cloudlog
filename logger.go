@@ -31,8 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
+	"context"
 )
 
 const (
@@ -244,15 +243,19 @@ func region() string {
 
 	if region == "" {
 		ctx, _ := context.WithTimeout(context.Background(), time.Second)
-		resp, err := ctxhttp.Get(ctx, http.DefaultClient, "http://169.254.169.254/latest/meta-data/placement/availability-zone")
+		req, err := http.NewRequest("GET", "http://169.254.169.254/latest/meta-data/placement/availability-zone", nil)
 		if err == nil {
-			defer resp.Body.Close()
-
-			data, err := ioutil.ReadAll(resp.Body)
+			req = req.WithContext(ctx)
+			resp, err := http.DefaultClient.Do(req)
 			if err == nil {
-				region = strings.TrimSpace(string(data))
-				if len(region) > 0 {
-					region = region[0 : len(region)-1]
+				defer resp.Body.Close()
+
+				data, err := ioutil.ReadAll(resp.Body)
+				if err == nil {
+					region = strings.TrimSpace(string(data))
+					if len(region) > 0 {
+						region = region[0 : len(region)-1]
+					}
 				}
 			}
 		}

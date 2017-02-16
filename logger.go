@@ -49,6 +49,7 @@ const (
 // CloudWatchLogs is an interface that provides the minimal shape of *cloudwatchlogs.CloudWatchLogs
 // and simplifies testing
 type CloudWatchLogs interface {
+	DescribeLogStreams(input *cloudwatchlogs.DescribeLogStreamsInput) (*cloudwatchlogs.DescribeLogStreamsOutput, error)
 	PutLogEvents(in *cloudwatchlogs.PutLogEventsInput) (*cloudwatchlogs.PutLogEventsOutput, error)
 	CreateLogGroup(*cloudwatchlogs.CreateLogGroupInput) (*cloudwatchlogs.CreateLogGroupOutput, error)
 	CreateLogStream(*cloudwatchlogs.CreateLogStreamInput) (*cloudwatchlogs.CreateLogStreamOutput, error)
@@ -215,6 +216,19 @@ func (l *logger) createLogStream() error {
 }
 
 func (l *logger) putLogs(events []*cloudwatchlogs.InputLogEvent) error {
+
+	if l.sequenceToken == nil {
+		// retrieve previous token
+		out, err := l.client.DescribeLogStreams(&cloudwatchlogs.DescribeLogStreamsInput{
+			LogGroupName: l.groupName,
+		})
+		if err == nil {
+			if len(out.LogStreams) > 0 {
+				l.sequenceToken = out.LogStreams[0].UploadSequenceToken
+			}
+		}
+	}
+
 	l.debug("Publishing logs to CloudWatch")
 	out, err := l.client.PutLogEvents(&cloudwatchlogs.PutLogEventsInput{
 		LogEvents:     events,
